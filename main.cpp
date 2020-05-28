@@ -44,6 +44,7 @@ std::vector<Data> separate(std::vector<long int>& lhs, std::vector<long int>& rh
 
 
 int main(int argc, char* argv[]) {
+	auto start = std::chrono::high_resolution_clock::now();
 	if (argc < 5) {
 		std::cout << "usage: <prog-name> <thread-amount> <file1.txt> <file2.txt>  <output.txt>\n";
 		return 1;
@@ -70,9 +71,14 @@ int main(int argc, char* argv[]) {
 	std::vector<std::future<Result>> futures;
 	for (auto&& task : dataVec) {
 		futures.emplace_back(pool.push(sum, task));
-	}
+	} 
 
-	auto start = std::chrono::high_resolution_clock::now();
+	// slower 
+	/*for (auto&& task : dataVec) {
+		futures.emplace_back(pool.execute(sum, task));
+	} */
+
+	
 	pool.start();
 
 	// getting results
@@ -99,5 +105,9 @@ int main(int argc, char* argv[]) {
 			}
 		}
 	}
+
+	auto stop = std::chrono::high_resolution_clock::now();
+	std::chrono::duration<double> dur = stop - start;
+	std::cout << "Milliseconds: " << std::chrono::duration_cast<std::chrono::milliseconds>(dur).count() << "\n";
 
 }

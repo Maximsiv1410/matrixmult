@@ -12,9 +12,11 @@
 #include <functional>
 #include <iostream>
 
+#include "func_wrap.hpp"
+
 class ThreadPool {
 public:
-	
+
 	ThreadPool(size_t size) : m_size(size) {
 		workers.reserve(size);
 		for (int i = 0; i < size; ++i) {
@@ -31,18 +33,6 @@ public:
 		}
 	}
 
-	ThreadPool(int size, std::queue<std::function<void()>>&& labor) :m_size(size) {
-		for (int i = 0; i < size; ++i) {
-			workers.emplace_back(std::bind(&ThreadPool::entry, this, i));
-		}
-
-		{ 
-			std::lock_guard<std::mutex> locker(mtx);
-			tasks = std::move(labor);
-			condVar.notify_all();
-		}
-
-	}
 
 	~ThreadPool() {
 		{
@@ -61,14 +51,13 @@ public:
 	decltype(auto) push(Fn&& fn, Args&&... args) {
 		typedef typename std::result_of<Fn(Args...)>::type ret;
 
-		auto task = std::make_shared<std::packaged_task<ret()>>
-			(std::bind(std::forward<Fn>(fn), std::forward<Args>(args)...));
+		std::packaged_task<ret()> task(std::bind(std::forward<Fn>(fn), std::forward<Args>(args)...));
 
-		std::future<ret> res = task->get_future();
+		std::future<ret> res(task.get_future());
 		{
 			std::unique_lock<std::mutex> lock(mtx);
 
-			tasks.emplace([task]() { (*task)(); });
+			tasks.emplace(std::move(task));
 		}
 		return res;
 	}
@@ -78,16 +67,15 @@ public:
 	decltype(auto) execute(Fn&& fn, Args&&... args) {
 		typedef typename std::result_of<Fn(Args...)>::type ret;
 
-		auto task = std::make_shared<std::packaged_task<ret()>>
-			(std::bind(std::forward<Fn>(fn), std::forward<Args>(args)...));
+		std::packaged_task<ret()> task(std::bind(std::forward<Fn>(fn), std::forward<Args>(args)...));
 
-		std::future<ret> res = task->get_future();
+		std::future<ret> res(task.get_future());
 		{
 			std::unique_lock<std::mutex> lock(mtx);
 
-			tasks.emplace([task]() { (*task)(); });
+			tasks.emplace(std::move(task));
 		}
-		condVar.notify_one(); 
+		condVar.notify_one();
 		return res;
 	}
 
@@ -110,7 +98,7 @@ public:
 
 	void entry(int id) {
 		while (true) {
-			std::function<void()> job;
+			function_wrapper job;
 			{
 				std::unique_lock<std::mutex> lock(mtx);
 				while (status && tasks.empty()) {
@@ -129,7 +117,7 @@ public:
 private:
 	size_t m_size;
 	std::vector<std::thread> workers;
-	std::queue<std::function<void()>> tasks;
+	std::queue<function_wrapper> tasks;
 	//std::atomic<bool> status{ true };
 	bool status{ true };
 	std::condition_variable condVar;
